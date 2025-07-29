@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+
+{% block title %}Logs - Android Monitor Pro{% endblock %}
+
+{% block head_extra %}
+<style>
+    .logs-container {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .logs-card {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .logs-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .log-controls {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    
+    .log-entry {
+        background: #f8f9fa;
+        border-left: 4px solid #007bff;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9em;
+        line-height: 1.4;
+    }
+    
+    .log-entry.alert {
+        border-left-color: #dc3545;
+        background: #f8d7da;
+        color: #721c24;
+    }
+    
+    .log-entry.warning {
+        border-left-color: #ffc107;
+        background: #fff3cd;
+        color: #856404;
+    }
+    
+    .log-timestamp {
+        color: #6c757d;
+        font-weight: bold;
+        margin-right: 10px;
+    }
+    
+    .log-message {
+        color: #495057;
+    }
+    
+    .no-logs {
+        text-align: center;
+        padding: 60px 20px;
+        color: #666;
+    }
+    
+    .btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-primary {
+        background: #007bff;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #0056b3;
+    }
+    
+    .btn-secondary {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .btn-secondary:hover {
+        background: #5a6268;
+    }
+    
+    .btn-danger {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .btn-danger:hover {
+        background: #c82333;
+    }
+    
+    .filter-buttons {
+        display: flex;
+        gap: 5px;
+        margin-right: 15px;
+    }
+    
+    .filter-btn {
+        padding: 6px 12px;
+        background: #e9ecef;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8em;
+        transition: all 0.3s ease;
+    }
+    
+    .filter-btn.active {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+    
+    .auto-refresh {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.9em;
+        color: #6c757d;
+    }
+    
+    .logs-stats {
+        background: #e3f2fd;
+        padding: 15px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+    }
+    
+    .stat-item {
+        text-align: center;
+    }
+    
+    .stat-number {
+        font-size: 1.5em;
+        font-weight: bold;
+        color: #007bff;
+    }
+    
+    .stat-label {
+        font-size: 0.8em;
+        color: #6c757d;
+        text-transform: uppercase;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="logs-container">
+    <h1>📋 Activity Logs</h1>
+    <p class="subtitle">Detailed activity and alert history</p>
+    
+    <div class="logs-stats" id="logsStats">
+        <div class="stat-item">
+            <div class="stat-number" id="totalLogs">0</div>
+            <div class="stat-label">Total Logs</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="alertsCount">0</div>
+            <div class="stat-label">Alerts</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="warningsCount">0</div>
+            <div class="stat-label">Warnings</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="lastUpdate">Never</div>
+            <div class="stat-label">Last Update</div>
+        </div>
+    </div>
+    
+    <div class="logs-card">
+        <div class="logs-header">
+            <h3>🔍 Log Entries</h3>
+            <div class="log-controls">
+                <div class="filter-buttons">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="alert">Alerts</button>
+                    <button class="filter-btn" data-filter="warning">Warnings</button>
+                </div>
+                <div class="auto-refresh">
+                    <input type="checkbox" id="autoRefresh" checked>
+                    <label for="autoRefresh">Auto-refresh</label>
+                </div>
+                <button class="btn btn-primary" onclick="refreshLogs()">
+                    <i class="fas fa-sync-alt" id="refreshIcon"></i> Refresh
+                </button>
+                <button class="btn btn-danger" onclick="clearLogs()">
+                    <i class="fas fa-trash"></i> Clear
+                </button>
+            </div>
+        </div>
+        
+        <div id="logsContainer">
+            {% if alerts and alerts|length > 0 %}
+                {% for alert in alerts %}
+                <div class="log-entry alert">
+                    <span class="log-message">{{ alert }}</span>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="no-logs">
+                <i class="fas fa-list-alt" style="font-size: 4em; color: #ddd; margin-bottom: 20px;"></i>
+                <h3>No logs available</h3>
+                <p>Activity logs and alerts will appear here when devices are connected and monitored.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+let currentFilter = 'all';
+let autoRefreshEnabled = true;
+let refreshInterval;
+
+function refreshLogs() {
+    const refreshIcon = document.getElementById('refreshIcon');
+    refreshIcon.classList.add('fa-spin');
+    
+    fetch('/data')
+        .then(response => response.json())
+        .then(result => {
+            const alerts = result.alerts || [];
+            updateLogsDisplay(alerts);
+            updateStats(alerts);
+        })
+        .catch(error => {
+            console.error('Error refreshing logs:', error);
+        })
+        .finally(() => {
+            refreshIcon.classList.remove('fa-spin');
+        });
+}
+
+function updateLogsDisplay(alerts) {
+    const container = document.getElementById('logsContainer');
+    
+    if (alerts.length === 0) {
+        container.innerHTML = `
+            <div class="no-logs">
+                <i class="fas fa-list-alt" style="font-size: 4em; color: #ddd; margin-bottom: 20px;"></i>
+                <h3>No logs available</h3>
+                <p>Activity logs and alerts will appear here when devices are connected and monitored.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Process and categorize alerts
+    const processedLogs = alerts.map(alert => {
+        const isAlert = alert.includes('ALERT') || alert.includes('🔋') || alert.includes('🧠') || alert.includes('💾');
+        const isWarning = alert.includes('WARNING') || alert.includes('⚠');
+        
+        return {
+            message: alert,
+            type: isAlert ? 'alert' : isWarning ? 'warning' : 'info',
+            timestamp: extractTimestamp(alert)
+        };
+    });
+    
+    // Filter logs based on current filter
+    const filteredLogs = currentFilter === 'all' ? 
+        processedLogs : 
+        processedLogs.filter(log => log.type === currentFilter);
+    
+    // Sort by timestamp (newest first)
+    filteredLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    container.innerHTML = filteredLogs.map(log => `
+        <div class="log-entry ${log.type}">
+            <span class="log-message">${log.message}</span>
+        </div>
+    `).join('');
+}
+
+function updateStats(alerts) {
+    const totalLogs = alerts.length;
+    const alertsCount = alerts.filter(alert => 
+        alert.includes('🔋') || alert.includes('🧠') || alert.includes('💾')
+    ).length;
+    const warningsCount = alerts.filter(alert => 
+        alert.includes('WARNING') || alert.includes('⚠')
+    ).length;
+    
+    document.getElementById('totalLogs').textContent = totalLogs;
+    document.getElementById('alertsCount').textContent = alertsCount;
+    document.getElementById('warningsCount').textContent = warningsCount;
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+}
+
+function extractTimestamp(logMessage) {
+    // Try to extract timestamp from log message
+    const timestampMatch = logMessage.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+    return timestampMatch ? timestampMatch[1] : new Date().toISOString();
+}
+
+function clearLogs() {
+    if (confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
+        // In a real implementation, you would call an endpoint to clear logs
+        // For now, we'll just clear the display
+        document.getElementById('logsContainer').innerHTML = `
+            <div class="no-logs">
+                <i class="fas fa-list-alt" style="font-size: 4em; color: #ddd; margin-bottom: 20px;"></i>
+                <h3>Logs cleared</h3>
+                <p>All log entries have been removed.</p>
+            </div>
+        `;
+        updateStats([]);
+    }
+}
+
+// Filter button handlers
+document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        // Update active button
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        
+        // Update filter and refresh display
+        currentFilter = this.dataset.filter;
+        refreshLogs();
+    });
+});
+
+// Auto-refresh toggle
+document.getElementById('autoRefresh').addEventListener('change', function() {
+    autoRefreshEnabled = this.checked;
+    
+    if (autoRefreshEnabled) {
+        refreshInterval = setInterval(refreshLogs, 10000);
+    } else {
+        clearInterval(refreshInterval);
+    }
+});
+
+// Initial load
+refreshLogs();
+
+// Start auto-refresh
+if (autoRefreshEnabled) {
+    refreshInterval = setInterval(refreshLogs, 10000);
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}

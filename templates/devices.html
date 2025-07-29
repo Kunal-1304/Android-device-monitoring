@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Devices - Android Monitor Pro{% endblock %}
+
+{% block head_extra %}
+<style>
+    .devices-container {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .device-card {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #28a745;
+    }
+    
+    .device-card.offline {
+        border-left-color: #dc3545;
+        opacity: 0.7;
+    }
+    
+    .device-header {
+        display: flex;
+        justify-content: between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    
+    .device-status {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        font-weight: bold;
+    }
+    
+    .status-online {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .status-offline {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    
+    .device-info {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 15px;
+    }
+    
+    .info-item {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        border-left: 3px solid #007bff;
+    }
+    
+    .info-label {
+        font-weight: bold;
+        color: #495057;
+        font-size: 0.9em;
+    }
+    
+    .info-value {
+        color: #007bff;
+        font-size: 1.1em;
+        margin-top: 5px;
+    }
+    
+    .no-devices {
+        text-align: center;
+        padding: 60px 20px;
+        background: white;
+        border-radius: 8px;
+        color: #666;
+    }
+    
+    .refresh-btn {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: #007bff;
+        color: white;
+        border: none;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .refresh-btn:hover {
+        background: #0056b3;
+        transform: scale(1.1);
+    }
+    
+    .refresh-btn i {
+        font-size: 1.2em;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="devices-container">
+    <h1>📱 Connected Devices</h1>
+    <p class="subtitle">Manage your monitored Android devices</p>
+    
+    <div id="devicesContainer">
+        {% if data and data.device_info %}
+        <div class="device-card" id="currentDevice">
+            <div class="device-header">
+                <h3>
+                    <i class="fas fa-mobile-alt"></i>
+                    {{ data.device_info.device_name or 'Unknown Device' }}
+                </h3>
+                <span class="device-status status-online">
+                    <i class="fas fa-circle"></i> Online
+                </span>
+            </div>
+            
+            <div class="device-info">
+                <div class="info-item">
+                    <div class="info-label">IP Address</div>
+                    <div class="info-value">{{ data.ip or 'Unknown' }}</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Android Version</div>
+                    <div class="info-value">{{ data.device_info.android_version or 'Unknown' }}</div>
+                </div>
+                
+                {% if data.battery %}
+                <div class="info-item">
+                    <div class="info-label">Battery Level</div>
+                    <div class="info-value">{{ data.battery.percentage or 0 }}%</div>
+                </div>
+                {% endif %}
+                
+                {% if data.ram %}
+                <div class="info-item">
+                    <div class="info-label">RAM Usage</div>
+                    <div class="info-value">{{ "%.1f"|format(data.ram.used_percent or 0) }}%</div>
+                </div>
+                {% endif %}
+                
+                {% if data.full_storage %}
+                <div class="info-item">
+                    <div class="info-label">Storage Usage</div>
+                    <div class="info-value">{{ "%.1f"|format(data.full_storage.used_percent or 0) }}%</div>
+                </div>
+                {% endif %}
+                
+                {% if data.location %}
+                <div class="info-item">
+                    <div class="info-label">Location</div>
+                    <div class="info-value">{{ "%.4f"|format(data.location.latitude or 0) }}, {{ "%.4f"|format(data.location.longitude or 0) }}</div>
+                </div>
+                {% endif %}
+                
+                {% if data.last_updated %}
+                <div class="info-item">
+                    <div class="info-label">Last Seen</div>
+                    <div class="info-value" id="lastSeen">{{ data.last_updated }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="no-devices">
+            <i class="fas fa-mobile-alt" style="font-size: 4em; color: #ddd; margin-bottom: 20px;"></i>
+            <h3>No devices connected</h3>
+            <p>Make sure your Android device is running the monitoring app and connected to the network.</p>
+            <p><strong>Server Port:</strong> 5001</p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <button class="refresh-btn" onclick="refreshDevices()" title="Refresh devices">
+        <i class="fas fa-sync-alt" id="refreshIcon"></i>
+    </button>
+</div>
+
+<script>
+function refreshDevices() {
+    const refreshIcon = document.getElementById('refreshIcon');
+    refreshIcon.classList.add('fa-spin');
+    
+    fetch('/data')
+        .then(response => response.json())
+        .then(result => {
+            const data = result.data;
+            
+            if (Object.keys(data).length === 0) {
+                document.getElementById('devicesContainer').innerHTML = `
+                    <div class="no-devices">
+                        <i class="fas fa-mobile-alt" style="font-size: 4em; color: #ddd; margin-bottom: 20px;"></i>
+                        <h3>No devices connected</h3>
+                        <p>Make sure your Android device is running the monitoring app and connected to the network.</p>
+                        <p><strong>Server Port:</strong> 5001</p>
+                    </div>
+                `;
+            } else {
+                // Update device info
+                updateDeviceInfo(data);
+            }
+        })
+        .catch(error => {
+            console.error('Error refreshing devices:', error);
+        })
+        .finally(() => {
+            refreshIcon.classList.remove('fa-spin');
+        });
+}
+
+function updateDeviceInfo(data) {
+    if (!data.device_info) return;
+    
+    const deviceName = data.device_info.device_name || 'Unknown Device';
+    const androidVersion = data.device_info.android_version || 'Unknown';
+    const ipAddress = data.ip || 'Unknown';
+    const batteryLevel = data.battery ? data.battery.percentage || 0 : 0;
+    const ramUsage = data.ram ? data.ram.used_percent || 0 : 0;
+    const storageUsage = data.full_storage ? data.full_storage.used_percent || 0 : 0;
+    const location = data.location ? 
+        `${data.location.latitude.toFixed(4)}, ${data.location.longitude.toFixed(4)}` : 'Unknown';
+    
+    const lastSeen = data.last_updated ? new Date(data.last_updated).toLocaleString() : 'Unknown';
+    
+    document.getElementById('devicesContainer').innerHTML = `
+        <div class="device-card" id="currentDevice">
+            <div class="device-header">
+                <h3>
+                    <i class="fas fa-mobile-alt"></i>
+                    ${deviceName}
+                </h3>
+                <span class="device-status status-online">
+                    <i class="fas fa-circle"></i> Online
+                </span>
+            </div>
+            
+            <div class="device-info">
+                <div class="info-item">
+                    <div class="info-label">IP Address</div>
+                    <div class="info-value">${ipAddress}</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Android Version</div>
+                    <div class="info-value">${androidVersion}</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Battery Level</div>
+                    <div class="info-value">${batteryLevel}%</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">RAM Usage</div>
+                    <div class="info-value">${ramUsage.toFixed(1)}%</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Storage Usage</div>
+                    <div class="info-value">${storageUsage.toFixed(1)}%</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Location</div>
+                    <div class="info-value">${location}</div>
+                </div>
+                
+                <div class="info-item">
+                    <div class="info-label">Last Seen</div>
+                    <div class="info-value">${lastSeen}</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Auto-refresh every 10 seconds
+setInterval(refreshDevices, 10000);
+</script>
+{% endblock %}
