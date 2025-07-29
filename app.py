@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, url_for
+from flask import Flask, render_template, jsonify, request
 import socket, threading, json, datetime
 import pywhatkit as kit
 import datetime as dt
@@ -6,175 +6,157 @@ import datetime as dt
 app = Flask(__name__)
 
 PORT = 5001
+WHATSAPP_NUM = "+91XXXXXXXXXX"  # your number here
 
-THRESHOLDS = {
-    "battery": 40,
-    "ram_used": 80,
+LIMITS = {
+    "battery": 20,
+    "ram_used": 85,
     "storage_used": 90
 }
 
-# Shared global state
 latest_data = {}
 alerts_log = []
-
-# Locks to ensure thread safety
 latest_data_lock = threading.Lock()
 alerts_lock = threading.Lock()
 
-# --- Alert Checker ---
 def check_alerts(data, addr):
     alerts = []
-
-    # Battery check
+    
     bat = data.get("battery", {}).get("percentage")
-    if isinstance(bat, (int, float)) and bat < THRESHOLDS["battery"]:
-        alerts.append(f"🔋 Battery level is critically low: {bat}%")
+    if bat and bat < LIMITS["battery"]:
+        alerts.append(f"🔋 Battery low: {bat}%")
 
-    # RAM check
-    ram_used = data.get("ram", {}).get("used_percent")
-    if isinstance(ram_used, (int, float)) and ram_used > THRESHOLDS["ram_used"]:
-        alerts.append(f"🧠 High RAM usage detected: {ram_used}%")
+    ram = data.get("ram", {}).get("used_percent")
+    if ram and ram > LIMITS["ram_used"]:
+        alerts.append(f"🧠 RAM high: {ram}%")
 
-    # Storage check
-    stor_used = data.get("full_storage", {}).get("used_percent")
-    if isinstance(stor_used, (int, float)) and stor_used > THRESHOLDS["storage_used"]:
-        alerts.append(f"💾 High storage usage detected: {stor_used}%")
+    storage = data.get("full_storage", {}).get("used_percent")
+    if storage and storage > LIMITS["storage_used"]:
+        alerts.append(f"💾 Storage full: {storage}%")
 
     return alerts
 
-# --- Socket Client Handler ---
 def handle_client(conn, addr):
     with conn:
         try:
-            text = conn.recv(4096).decode().strip()
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                print(f"[{addr}] ⚠ Invalid JSON: {text}")
-                return
+            data_raw = conn.recv(4096).decode().strip()
+            data = json.loads(data_raw)
+            
+            timestamp = datetime.datetime.now().isoformat()
+            print(f"\n[{timestamp}] Got data from {addr}")
 
-            ts = datetime.datetime.now().isoformat()
-            print(f"\n[{ts}] Data from {addr}:\n{json.dumps(data, indent=2)}")
-
-            # Thread-safe update of latest_data
             global latest_data
             with latest_data_lock:
                 latest_data = data.copy()
-                latest_data['last_updated'] = ts  # Add timestamp
-            print(f"in client thread: latest_data: {latest_data}")
+                latest_data['last_updated'] = timestamp
 
-            # Check for alerts
+            # check for problems
             alerts = check_alerts(data, addr)
-            for a in alerts:
-                alert_message = f"{ts} | {addr} | {a}"
+            for alert in alerts:
+                msg = f"{timestamp} | {addr} | {alert}"
                 with alerts_lock:
-                    alerts_log.append(alert_message)
-                print(f"❗ ALERT: {alert_message}")
+                    alerts_log.append(msg)
+                print(f"ALERT: {msg}")
 
-                # --- WhatsApp Alert ---
+                # send whatsapp msg
                 try:
-                    # Use device_id from data if available, else fallback to IP
-                    device_id = data.get("device_id", f"Device-{addr[0]}")
-                    emoji = a.split()[0]
-                    message_text = a.split(":", 1)[1].strip()
-
-                    whatsapp_message = (
-                        f"{emoji} *System Alert*\n"
-                        f"Device ID: `{device_id}`\n"
-                        f"{message_text}.\n"
-                        f"Please take necessary action immediately to avoid disruption.\n"
-                        f"— Monitoring System"
-                    )
+                    device_name = data.get("device_id", f"Device-{addr[0]}")
+                    
+                    whatsapp_text = f"""🚨 Alert from {device_name}
+{alert}
+Time: {timestamp.split('T')[0]} {timestamp.split('T')[1][:8]}
+Check device now!"""
 
                     now = dt.datetime.now()
-                    hour = now.hour
-                    minute = now.minute + 1
+                    send_hour = now.hour
+                    send_min = now.minute + 1
 
-                    kit.sendwhatmsg(
-                        "+917219371901",  # 🔁 Replace with your WhatsApp number
-                        whatsapp_message,
-                        hour,
-                        minute,
-                        wait_time=10,
-                        tab_close=True
-                    )
-                    print("📲 WhatsApp alert sent.")
+                    kit.sendwhatmsg(WHATSAPP_NUM, whatsapp_text, send_hour, send_min, 
+                                  wait_time=8, tab_close=True)
+                    print("WhatsApp sent")
                     
                 except Exception as e:
-                    print(f"❌ Failed to send WhatsApp alert: {e}")
+                    print(f"WhatsApp failed: {e}")
 
+        except json.JSONDecodeError:
+            print(f"Bad JSON from {addr}")
         except Exception as e:
-            print(f"Error handling client {addr}: {e}")
+            print(f"Client error: {e}")
 
-# --- Start Socket Server ---
-def start_socket_server():
+def start_server():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        s.bind(("", PORT))
-        s.listen()
-        print(f"🚀 Socket server listening on port {PORT}")
+    s.bind(("", PORT))
+    s.listen()
+    print(f"Server running on port {PORT}")
 
-        while True:
-            try:
-                conn, addr = s.accept()
-                threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
-            except Exception as e:
-                print(f"Error accepting connection: {e}")
-    except Exception as e:
-        print(f"Error starting socket server: {e}")
+    while True:
+        try:
+            conn, addr = s.accept()
+            t = threading.Thread(target=handle_client, args=(conn, addr))
+            t.daemon = True
+            t.start()
+        except:
+            pass
 
-# --- Flask Routes ---
 @app.route("/")
-def index():
+def home():
     with latest_data_lock:
-        data_copy = latest_data.copy()
+        data = latest_data.copy()
     with alerts_lock:
-        recent_alerts = alerts_log[-10:]
-    return render_template("index.html", active_page="dashboard", data=data_copy, alerts=recent_alerts)
+        recent = alerts_log[-10:]
+    return render_template("index.html", active_page="dashboard", data=data, alerts=recent)
 
 @app.route("/devices")
 def devices():
     with latest_data_lock:
-        data_copy = latest_data.copy()
-    return render_template("devices.html", active_page="devices", data=data_copy)
+        data = latest_data.copy()
+    return render_template("devices.html", active_page="devices", data=data)
 
 @app.route("/logs")
 def logs():
     with alerts_lock:
-        log_copy = alerts_log.copy()
-    return render_template("logs.html", active_page="logs", alerts=log_copy)
+        all_logs = alerts_log.copy()
+    return render_template("logs.html", active_page="logs", alerts=all_logs)
 
 @app.route("/settings")
 def settings():
-    return render_template("settings.html", active_page="settings", thresholds=THRESHOLDS)
+    return render_template("settings.html", active_page="settings", thresholds=LIMITS)
 
 @app.route("/data")
 def get_data():
     with latest_data_lock:
-        data_copy = latest_data.copy()
+        data = latest_data.copy()
     with alerts_lock:
-        recent_alerts = alerts_log[-10:]
-    print("in /data route: latest_data:", data_copy)
+        recent = alerts_log[-10:]
+    
     return jsonify({
-        "data": data_copy,
-        "alerts": recent_alerts,
-        "status": "success"
+        "data": data,
+        "alerts": recent,
+        "status": "ok"
     })
 
-@app.route("/update_thresholds", methods=['POST'])
-def update_thresholds():
-    global THRESHOLDS
+@app.route("/update_limits", methods=['POST'])
+def update_limits():
+    global LIMITS
     try:
-        data = request.get_json()
-        if data:
-            THRESHOLDS.update(data)
-            return jsonify({"status": "success", "thresholds": THRESHOLDS})
-        return jsonify({"status": "error", "message": "No data provided"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+        new_limits = request.get_json()
+        if new_limits:
+            for k, v in new_limits.items():
+                if k in LIMITS:
+                    LIMITS[k] = int(v)
+            return jsonify({"status": "ok", "limits": LIMITS})
+        return jsonify({"status": "error"})
+    except:
+        return jsonify({"status": "error"})
 
-# --- Entry Point ---
 if __name__ == "__main__":
-    threading.Thread(target=start_socket_server, daemon=True).start()
-    app.run(debug=False, port=5000, use_reloader=False)
+    print("Starting monitoring system...")
+    
+    # start socket server
+    server_thread = threading.Thread(target=start_server)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    # start web app
+    app.run(debug=False, host='0.0.0.0', port=5000)
