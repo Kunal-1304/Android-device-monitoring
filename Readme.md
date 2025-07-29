@@ -23,13 +23,13 @@ The system enables administrators to monitor multiple Android devices from a cen
 
 ## Screenshots
 
-![Dashboard](screenshot/Dashboard.jpg)
+![Dashboard](Screenshots/dashboard.jpg)
 *Main dashboard showing connected devices and their status*
 
-![Device Logs](screenshot/Logs.jpg)
+![Device Logs](Screenshots/alerts.jpg)
 *Detailed log viewer with filtering capabilities*
 
-![Device List](screenshot/Devices.jpg)
+![Device List](Screenshots/connected device.jpg)
 *Overview of all monitored devices*
 
 ## Technologies Used
